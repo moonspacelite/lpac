@@ -1,0 +1,118 @@
+name: Build lpac v2.3.0 for OpenWrt 24.10 (ipq40xx)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build lpac ipk (arm_cortex-a7_neon-vfpv4)
+    runs-on: ubuntu-24.04
+
+    env:
+      OPENWRT_VERSION: "24.10.0"
+      SDK_TARGET: "ipq40xx"
+      SDK_SUBTARGET: "generic"
+      ARCH: "arm_cortex-a7_neon-vfpv4"
+      LPAC_VERSION: "2.3.0"
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      # ------------------------------------------------------------------ #
+      # 1. Install host dependencies
+      # ------------------------------------------------------------------ #
+      - name: Install host dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build \
+            libncurses-dev libssl-dev python3 rsync \
+            wget unzip file
+
+      # ------------------------------------------------------------------ #
+      # 2. Download & extract OpenWrt SDK 24.10
+      # ------------------------------------------------------------------ #
+      - name: Cache OpenWrt SDK
+        id: cache-sdk
+        uses: actions/cache@v4
+        with:
+          path: sdk
+          key: openwrt-sdk-${{ env.OPENWRT_VERSION }}-${{ env.SDK_TARGET }}-${{ env.SDK_SUBTARGET }}
+
+      - name: Download OpenWrt SDK
+        if: steps.cache-sdk.outputs.cache-hit != 'true'
+        run: |
+          SDK_URL="https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${SDK_TARGET}/${SDK_SUBTARGET}"
+          SDK_FILE=$(wget -qO- "${SDK_URL}/" | grep -o 'openwrt-sdk-[^"]*Linux-x86_64\.tar\.zst' | head -1)
+          echo "Downloading: ${SDK_FILE}"
+          wget -q "${SDK_URL}/${SDK_FILE}" -O sdk.tar.zst
+          mkdir sdk
+          tar --zstd -xf sdk.tar.zst -C sdk --strip-components=1
+          rm sdk.tar.zst
+
+      # ------------------------------------------------------------------ #
+      # 3. Copy custom package into SDK
+      # ------------------------------------------------------------------ #
+      - name: Copy package into SDK
+        run: |
+          cp -r package/lpac sdk/package/lpac
+
+      # ------------------------------------------------------------------ #
+      # 4. Update feeds & install
+      # ------------------------------------------------------------------ #
+      - name: Update feeds
+        working-directory: sdk
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      # ------------------------------------------------------------------ #
+      # 5. Configure: enable lpac + required options
+      # ------------------------------------------------------------------ #
+      - name: Configure SDK
+        working-directory: sdk
+        run: |
+          # Start from defaults
+          make defconfig
+
+          # Enable lpac with AT + MBIM backends
+          cat >> .config << 'EOF'
+          CONFIG_PACKAGE_lpac=y
+          CONFIG_LPAC_WITH_AT=y
+          CONFIG_LPAC_WITH_MBIM=y
+          CONFIG_LPAC_WITH_PCSC=n
+          CONFIG_LPAC_WITH_UQMI=n
+          EOF
+
+          make defconfig
+
+      # ------------------------------------------------------------------ #
+      # 6. Build lpac package
+      # ------------------------------------------------------------------ #
+      - name: Build lpac
+        working-directory: sdk
+        run: |
+          make package/lpac/compile V=sc -j$(nproc) \
+            IGNORE_ERRORS=n \
+            BUILD_LOG=1
+
+      # ------------------------------------------------------------------ #
+      # 7. Collect artifacts
+      # ------------------------------------------------------------------ #
+      - name: Collect .ipk files
+        run: |
+          mkdir -p output
+          find sdk/bin/packages -name "lpac*.ipk" -exec cp {} output/ \;
+          find sdk/bin/packages -name "libmbim*.ipk" -exec cp {} output/ \;
+          ls -lh output/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: lpac-${{ env.LPAC_VERSION }}-ipq40xx-ipk
+          path: output/*.ipk
+          retention-days: 30
+          
