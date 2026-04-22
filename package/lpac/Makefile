@@ -19,7 +19,7 @@ PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/estkme-group/lpac/tar.gz/refs/tags/v$(PKG_VERSION)?
-PKG_HASH:=skip
+PKG_HASH:=661dffbd1e9e5732dab4a0bb0a9837d4906c8c66bd748bda262fe3e8d3e420f6
 
 # Jika hash sudah diketahui, ganti baris di atas dengan:
 # PKG_HASH:=<sha256sum dari tarball>
