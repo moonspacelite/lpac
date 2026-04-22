@@ -1,0 +1,37 @@
+menu "lpac backend configuration"
+	depends on PACKAGE_lpac
+
+config LPAC_WITH_AT
+	bool "Enable AT command backend (ttyACM/ttyUSB)"
+	default y
+	help
+	  Aktifkan backend AT untuk modem yang expose serial AT commands.
+	  Fibocom L850-GL NCM mode menggunakan /dev/ttyACM*.
+	  Tidak memerlukan dependensi tambahan.
+
+config LPAC_WITH_MBIM
+	bool "Enable MBIM backend"
+	default y
+	select PACKAGE_libmbim
+	help
+	  Aktifkan backend MBIM untuk modem yang support MBIM protocol.
+	  Fibocom L850-GL support MBIM via /dev/cdc-wdm*.
+	  Memerlukan libmbim.
+
+config LPAC_WITH_PCSC
+	bool "Enable PC/SC backend (smart card reader)"
+	default n
+	select PACKAGE_libpcsclite
+	select PACKAGE_pcscd
+	help
+	  Aktifkan untuk external USB smart card reader.
+	  Tidak diperlukan untuk modem embedded eSIM.
+
+config LPAC_WITH_UQMI
+	bool "Enable uqmi/QMI backend"
+	default n
+	help
+	  Aktifkan backend QMI via uqmi.
+	  Tidak umum untuk Fibocom L850-GL.
+
+endmenu
