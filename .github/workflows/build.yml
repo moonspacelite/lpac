@@ -14,33 +14,26 @@ jobs:
       OPENWRT_VERSION: "24.10.0"
       SDK_TARGET: "ipq40xx"
       SDK_SUBTARGET: "generic"
-      ARCH: "arm_cortex-a7_neon-vfpv4"
       LPAC_VERSION: "2.3.0"
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # ------------------------------------------------------------------ #
-      # 1. Install host dependencies
-      # ------------------------------------------------------------------ #
       - name: Install host dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake ninja-build \
             libncurses-dev libssl-dev python3 rsync \
-            wget unzip file
+            wget unzip file zstd
 
-      # ------------------------------------------------------------------ #
-      # 2. Download & extract OpenWrt SDK 24.10
-      # ------------------------------------------------------------------ #
       - name: Cache OpenWrt SDK
         id: cache-sdk
         uses: actions/cache@v4
         with:
           path: sdk
-          key: openwrt-sdk-${{ env.OPENWRT_VERSION }}-${{ env.SDK_TARGET }}-${{ env.SDK_SUBTARGET }}
+          key: openwrt-sdk-${{ env.OPENWRT_VERSION }}-${{ env.SDK_TARGET }}-${{ env.SDK_SUBTARGET }}-v2
 
       - name: Download OpenWrt SDK
         if: steps.cache-sdk.outputs.cache-hit != 'true'
@@ -53,32 +46,33 @@ jobs:
           tar --zstd -xf sdk.tar.zst -C sdk --strip-components=1
           rm sdk.tar.zst
 
-      # ------------------------------------------------------------------ #
-      # 3. Copy custom package into SDK
-      # ------------------------------------------------------------------ #
-      - name: Copy package into SDK
+      # FIX 1: Salin paket SEBELUM feeds update, dengan nama berbeda dari feed resmi
+      # Feed resmi punya 'lpac', kita override langsung di package/ bukan lewat feed
+      - name: Override lpac package in SDK
         run: |
+          # Hapus lpac dari feeds jika ada (akan di-install saat feeds update nanti)
+          # Kita langsung copy ke package/ agar override feed
           cp -r package/lpac sdk/package/lpac
 
-      # ------------------------------------------------------------------ #
-      # 4. Update feeds & install
-      # ------------------------------------------------------------------ #
-      - name: Update feeds
+      - name: Update feeds (without installing all)
         working-directory: sdk
         run: |
+          # Update feeds tapi JANGAN install -a dulu
           ./scripts/feeds update -a
-          ./scripts/feeds install -a
 
-      # ------------------------------------------------------------------ #
-      # 5. Configure: enable lpac + required options
-      # ------------------------------------------------------------------ #
+          # Install hanya dependensi yang diperlukan lpac
+          ./scripts/feeds install libmbim libcurl
+
+          # Cek apakah lpac dari feed akan konflik
+          # Kita TIDAK install lpac dari feed - biarkan versi di package/ yang digunakan
+
       - name: Configure SDK
         working-directory: sdk
         run: |
-          # Start from defaults
           make defconfig
 
-          # Enable lpac with AT + MBIM backends
+          # Enable lpac dengan AT + MBIM backends
+          # Perhatikan: kita menggunakan package/lpac bukan dari feed
           cat >> .config << 'EOF'
           CONFIG_PACKAGE_lpac=y
           CONFIG_LPAC_WITH_AT=y
@@ -89,25 +83,17 @@ jobs:
 
           make defconfig
 
-      # ------------------------------------------------------------------ #
-      # 6. Build lpac package
-      # ------------------------------------------------------------------ #
       - name: Build lpac
         working-directory: sdk
         run: |
-          make package/lpac/compile V=sc -j$(nproc) \
-            IGNORE_ERRORS=n \
-            BUILD_LOG=1
+          make package/lpac/compile V=sc -j$(nproc) BUILD_LOG=1
 
-      # ------------------------------------------------------------------ #
-      # 7. Collect artifacts
-      # ------------------------------------------------------------------ #
       - name: Collect .ipk files
         run: |
           mkdir -p output
           find sdk/bin/packages -name "lpac*.ipk" -exec cp {} output/ \;
-          find sdk/bin/packages -name "libmbim*.ipk" -exec cp {} output/ \;
-          ls -lh output/
+          echo "=== Output files ==="
+          ls -lh output/ || echo "No .ipk found!"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -115,4 +101,5 @@ jobs:
           name: lpac-${{ env.LPAC_VERSION }}-ipq40xx-ipk
           path: output/*.ipk
           retention-days: 30
+          if-no-files-found: error
           
