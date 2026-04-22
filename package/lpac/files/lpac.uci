@@ -1,0 +1,14 @@
+config lpac 'main'
+	# APDU backend: at | mbim | pcsc
+	# Untuk Fibocom L850-GL NCM mode:
+	#   - Gunakan 'at' jika via /dev/ttyACM*
+	#   - Gunakan 'mbim' jika via /dev/cdc-wdm*
+	option apdu_driver 'mbim'
+
+	# HTTP backend: curl (satu-satunya pilihan saat ini)
+	option http_driver 'curl'
+
+	# Device path (opsional, bisa juga di-set via env variable)
+	# Contoh AT:   /dev/ttyACM1   (biasanya ACM1 atau ACM2 untuk L850-GL)
+	# Contoh MBIM: /dev/cdc-wdm0
+	option device '/dev/cdc-wdm0'
